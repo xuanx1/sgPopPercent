@@ -445,6 +445,28 @@
 
       chart.setOption(option);
 
+      // Position Singapore flag in the center of the entire screen
+      function centerFlag() {
+        const flag = document.getElementById('singapore-flag');
+        
+        if (flag) {
+          // Get viewport width and flag width
+          const viewportWidth = window.innerWidth;
+          const flagWidth = 240; // Flag width from CSS
+          
+          // Calculate center position relative to entire screen, then move 100px left
+          const flagLeft = (viewportWidth - flagWidth) / 2 - 230;
+          
+          flag.style.left = flagLeft + 'px';
+          flag.style.top = '30px'; // Keep the same top position
+          
+          console.log(`Flag positioned at: ${flagLeft}px (viewport: ${viewportWidth}px, flag: ${flagWidth}px, offset: -100px)`);
+        }
+      }
+      
+      // Center flag after chart is rendered
+      setTimeout(centerFlag, 100);
+
       // Function to update Y-axis labels based on current zoom range
       function updateYAxisLabels(startPercent, endPercent) {
         const startIndex = Math.floor((startPercent / 100) * (years.length - 1));
@@ -963,6 +985,9 @@
       // Make chart responsive
       window.addEventListener('resize', function() {
         chart.resize();
+        
+        // Re-center flag on resize
+        centerFlag();
         
         // Update labels and border on resize
         setTimeout(() => {
