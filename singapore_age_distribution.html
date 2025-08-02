@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Singapore Age Distribution, Mapped</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+  <style>
+    #main {
+      width: 900px;
+      height: 1080px;
+      background: transparent;
+      border-radius: 8px;
+      position: relative;
+      float: left;
+    }
+    
+    #singapore-info {
+      width: 300px;
+      height: 1080px;
+      float: right;
+      background: white;
+      border: none;
+      border-radius: 8px;
+      padding: 20px;
+      box-sizing: border-box;
+      font-family: 'Gotham', 'Arial', sans-serif;
+      overflow-y: auto;
+    }
+    
+    .info-section {
+      margin-bottom: 25px;
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+      border-left: 4px solid #dc3545;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .info-section h3 {
+      margin: 0 0 10px 0;
+      color: #212529;
+      font-size: 14px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .info-section p {
+      margin: 5px 0;
+      color: #495057;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    
+    .stat-box {
+      background: #f8f9fa;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 5px 0;
+      border-left: 3px solid #28a745;
+    }
+    
+    .stat-number {
+      font-size: 18px;
+      font-weight: bold;
+      color: #28a745;
+    }
+    
+    .stat-label {
+      font-size: 10px;
+      color: #6c757d;
+      text-transform: uppercase;
+    }
+    
+    .timeline-item {
+      border-left: 2px solid #007bff;
+      padding-left: 10px;
+      margin: 8px 0;
+      position: relative;
+    }
+    
+    .timeline-item::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: #007bff;
+      border-radius: 50%;
+      position: absolute;
+      left: -5px;
+      top: 5px;
+    }
+    
+    .timeline-year {
+      font-weight: bold;
+      color: #007bff;
+      font-size: 11px;
+    }
+    
+    .timeline-desc {
+      font-size: 10px;
+      color: #495057;
+      margin: 2px 0;
+    }
+    
+    .container {
+      width: 920px;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 20px;
+      background-color: #ffffff;
+    }
+    h2 {
+      color: #1a1a1a;
+      text-align: center;
+      margin-bottom: 15px;
+      font-size: 24px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    #singapore-flag {
+      position: absolute;
+      left: var(--grid-left, 275px); /* Dynamic alignment with chart gridLeft */
+      top: 30px;
+      width: 240px;
+      height: 160px;
+      border: 2px solid #666666;
+      z-index: 1500;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img id="singapore-flag" src="Flag_of_Singapore.svg.png" alt="Singapore Flag" />
+    <div id="main"></div>
+  </div>
+
+  <script>
+    const ageBins = {
+      '90+ Years': [...Array(9).keys()].map(i => (90 + i).toString()).concat('99', '100+'),
+      '80-89 Years': [...Array(10).keys()].map(i => (80 + i).toString()),
+      '70-79 Years': [...Array(10).keys()].map(i => (70 + i).toString()),
+      '60-69 Years': [...Array(10).keys()].map(i => (60 + i).toString()),
+      '50-59 Years': [...Array(10).keys()].map(i => (50 + i).toString()),
+      '40-49 Years': [...Array(10).keys()].map(i => (40 + i).toString()),
+      '30-39 Years': [...Array(10).keys()].map(i => (30 + i).toString()),
+      '20-29 Years': [...Array(10).keys()].map(i => (20 + i).toString()),
+      '10-19 Years': [...Array(10).keys()].map(i => (10 + i).toString()),
+      '0-9 Years': [...Array(10).keys()].map(i => i.toString())
+    };
+
+    // Function to process and visualize the data
+    function processData(results) {
+      const data = results.data.filter(row => row.Year && !isNaN(row.Year)); // filter invalid rows
+      
+      if (data.length === 0) {
+        document.querySelector('.info').innerHTML = '<strong>Error:</strong> No valid data found in the CSV file.';
+        return;
+      }
+
+      // Chart configuration - centralized for consistency
+      const chartConfig = {
+        gridLeft: 120,
+        gridRight: 120,
+        gridTop: 220,
+        gridBottom: 60,
+        chartHeight: 1080
+      };
+
+      // Set flag position dynamically based on chart grid configuration
+      // document.documentElement.style.setProperty('--grid-left', `${chartConfig.gridLeft}px`);
+      console.log(`Flag CSS variable would be set to: ${chartConfig.gridLeft}px`);
+
+      const years = data.map(row => row.Year);
+      const variants = data.map(row => row.Variant || 'Unknown');
+      const ageGroupData = {};
+
+      // Calculate percentages for each age group
+      const percentageData = {};
+      Object.keys(ageBins).forEach(group => {
+        percentageData[group] = data.map((row, index) => {
+          const total = Object.keys(ageBins).reduce((sum, g) => {
+            return sum + ageBins[g].reduce((ageSum, age) => {
+              return ageSum + (parseFloat(row[age]) || 0);
+            }, 0);
+          }, 0);
+          
+          const groupTotal = ageBins[group].reduce((sum, age) => {
+            return sum + (parseFloat(row[age]) || 0);
+          }, 0);
+          
+          return total > 0 ? (groupTotal / total) * 100 : 0;
+        });
+      });
+
+      // Create series data with ThemeRiver (streamgraph) style
+      const colors = [
+        '#7f1d1d', // 90+: Very dark red (oldest) - now at top
+        '#b91c1c', // 80-89: Dark red (elderly)
+        '#dc2626', // 70-79: Red (elderly)
+        '#ea580c', // 60-69: Red-orange (pre-elderly)
+        '#f59e0b', // 50-59: Orange (working age)
+        '#fcd34d', // 40-49: Yellow (working age peak)
+        '#93c5fd', // 30-39: Lighter blue (adults)
+        '#60a5fa', // 20-29: Light blue (young adults)
+        '#3b82f6', // 10-19: Blue (young population)
+        '#1e40af'  // 0-9: Deep blue (young population) - now at bottom
+      ];
+
+      // Transform data for stacked area chart - REVERSE ORDER so old is at top, young at bottom
+      const ageGroupsReversed = Object.keys(ageBins).reverse(); // Start with 0-9, end with 90+
+      const seriesData = ageGroupsReversed.map((group, index) => ({
+        name: group,
+        type: 'line',
+        stack: 'total',
+        areaStyle: {
+          opacity: 0.8
+        },
+        lineStyle: {
+          width: 0
+        },
+        symbol: 'none',
+        data: percentageData[group],
+        itemStyle: {
+          color: colors[Object.keys(ageBins).indexOf(group)] // Use original color mapping
+        }
+      }));
+
+      // Initialize chart
+      const chart = echarts.init(document.getElementById('main'));
+      
+      const option = {
+        backgroundColor: 'transparent',
+        color: colors, // Apply the age-based color scheme
+        title: {
+          text: 'PROJECTED \nAGE DISTRIBUTION',
+          subtext: 'Interactive visualization with temporal control, illustrating Singapore\'s \ndemographic transformation from 1950, including projections until \n2100. Showing the share of each age group as the years progresses. \nData from UN World Population Prospects.',
+          left: 380,
+          top: 1,
+          textStyle: {
+            fontSize: 40,
+            fontWeight: 'bold',
+            color: '#888888',
+            fontFamily: 'Gotham, Arial, sans-serif',
+            lineHeight: 48
+          },
+          subtextStyle: {
+            fontSize: 12,
+            color: '#666',
+            lineHeight: 16
+          }
+        },
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: 'rgba(255,255,255,0.95)',
+          borderColor: '#ccc',
+          borderWidth: 1,
+          textStyle: {
+            color: '#333',
+            fontSize: 12
+          },
+          formatter: function(params) {
+            const yearIndex = params[0].dataIndex;
+            const year = years[yearIndex];
+            const variant = variants[yearIndex];
+            
+            let result = `<div style="font-weight: bold; margin-bottom: 6px;">${year}</div>
+                         <div style="font-size: 10px; color: #666; margin-bottom: 8px;">${variant} Data</div>`;
+            
+            params.forEach(param => {
+              const ageGroup = param.seriesName;
+              const percentage = param.value;
+              const colorIndex = Object.keys(ageBins).indexOf(ageGroup);
+              
+              result += `<div style="margin: 2px 0;">
+                          <span style="display: inline-block; width: 12px; height: 12px; background-color: ${colors[colorIndex]}; margin-right: 8px; border-radius: 2px;"></span>
+                          <span style="font-weight: 500;">${ageGroup}:</span> 
+                          <span>${percentage.toFixed(1)}%</span>
+                        </div>`;
+            });
+            
+            return result;
+          }
+        },
+        legend: {
+          show: false
+        },
+        grid: {
+          left: chartConfig.gridLeft,
+          right: chartConfig.gridRight,
+          top: chartConfig.gridTop,
+          bottom: chartConfig.gridBottom
+        },
+        xAxis: {
+          type: 'category',
+          data: years,
+          axisLine: {
+            show: true,
+            lineStyle: {
+              color: '#404040',
+              width: 2
+            }
+          },
+          axisLabel: {
+            formatter: function (value) {
+              return value;
+            },
+            interval: function(index) {
+              return index % 10 === 0;
+            },
+            color: '#333',
+            fontSize: 11,
+            fontWeight: 'bold'
+          },
+          axisTick: {
+            show: true,
+            lineStyle: {
+              color: '#404040'
+            }
+          },
+          splitLine: {
+            show: true,
+            lineStyle: {
+              type: 'dashed',
+              opacity: 0.2
+            }
+          },
+          boundaryGap: false
+        },
+        yAxis: [{
+          type: 'value',
+          axisLine: {
+            show: true,
+            lineStyle: {
+              color: '#404040',
+              width: 2
+            }
+          },
+          axisLabel: {
+            show: false // Hide default labels, we'll add custom ones
+          },
+          axisTick: {
+            show: true,
+            lineStyle: {
+              color: '#404040'
+            }
+          },
+          splitLine: {
+            show: true,
+            lineStyle: {
+              type: 'dashed',
+              opacity: 0.2
+            }
+          },
+          min: 0,
+          max: 100
+        }, {
+          type: 'value',
+          axisLine: {
+            show: true,
+            lineStyle: {
+              color: '#404040',
+              width: 2
+            }
+          },
+          axisLabel: {
+            show: false // Hide default labels, we'll add custom ones
+          },
+          axisTick: {
+            show: true,
+            lineStyle: {
+              color: '#404040'
+            }
+          },
+          splitLine: {
+            show: false
+          },
+          min: 0,
+          max: 100
+        }],
+        dataZoom: [{
+          type: 'slider',
+          show: true,
+          xAxisIndex: [0],
+          start: 0,
+          end: 100,
+          bottom: 10,
+          height: 7,
+          handleIcon: 'circle',
+          handleSize: '12',
+          handleStyle: {
+            color: '#ffffff',
+          },
+          dataBackground: {
+            lineStyle: {
+              color: '#ddd',
+              width: 1,
+              opacity: 0.5
+            },
+            areaStyle: {
+              color: '#f5f5f5',
+              opacity: 0.3
+            }
+          },
+          selectedDataBackground: {
+            lineStyle: {
+              color: '#888',
+              width: 1
+            },
+            areaStyle: {
+              color: '#e0e0e0',
+              opacity: 0.5
+            }
+          },
+          fillerColor: '#535353',
+          borderColor: '#ccc',
+          backgroundColor: '#fafafa',
+          textStyle: {
+            color: '#666',
+            fontSize: 11,
+            fontWeight: 'bold'
+          },
+          showDetail: false,
+          showDataShadow: false,
+          realtime: true,
+          labelPrecision: 0,
+          labelFormatter: function(value, valueStr) {
+            return valueStr;
+          },
+          emphasis: {
+            handleStyle: {
+              color: '#555'
+            }
+          },
+          moveHandleSize: 10,
+          zoomLock: false,
+          brushSelect: false
+        }],
+        series: seriesData
+      };
+
+      chart.setOption(option);
+
+      // Function to update Y-axis labels based on current zoom range
+      function updateYAxisLabels(startPercent, endPercent) {
+        const startIndex = Math.floor((startPercent / 100) * (years.length - 1));
+        const endIndex = Math.floor((endPercent / 100) * (years.length - 1));
+        
+        const leftAxisLabels = [];
+        const rightAxisLabels = [];
+        const ageGroups = Object.keys(ageBins);
+        
+        // Grid area dimensions (matching the grid config)
+        const gridTop = chartConfig.gridTop;
+        const gridBottom = chartConfig.gridBottom;
+        const gridLeft = chartConfig.gridLeft;
+        const gridRight = chartConfig.gridRight;
+        const chartHeight = chartConfig.chartHeight;
+        const gridHeight = chartHeight - gridTop - gridBottom;
+        
+        // Calculate tick positions for both axes
+        const leftTicks = [];
+        const rightTicks = [];
+        
+        // Calculate cumulative positions for left axis (start of range)
+        let leftCumulative = 0;
+        for (let i = ageGroups.length - 1; i >= 0; i--) {
+          const group = ageGroups[i];
+          const groupPercent = percentageData[group][startIndex];
+          
+          // Add tick at the start of this age group
+          leftTicks.push(leftCumulative);
+          
+          const midPoint = leftCumulative + (groupPercent / 2);
+          const yPosition = gridTop + (gridHeight * (100 - midPoint) / 100);
+          
+          leftAxisLabels.push({
+            type: 'text',
+            left: gridLeft - 25,
+            top: yPosition,
+            z: 1000,
+            style: {
+              text: `${groupPercent.toFixed(1)}%`,
+              fontSize: 11,
+              fontWeight: 'bold',
+              fill: colors[Object.keys(ageBins).indexOf(group)],
+              textAlign: 'right',
+              textVerticalAlign: 'middle',
+              backgroundColor: 'white',
+              borderColor: '#404040',
+              borderWidth: 1,
+              padding: [6, 6],
+              borderRadius: 0
+            }
+          });
+          
+          leftCumulative += groupPercent;
+        }
+        leftTicks.push(leftCumulative); // Add final tick at 100%
+        
+        // Calculate cumulative positions for right axis (end of range)
+        let rightCumulative = 0;
+        for (let i = ageGroups.length - 1; i >= 0; i--) {
+          const group = ageGroups[i];
+          const groupPercent = percentageData[group][endIndex];
+          
+          // Add tick at the start of this age group
+          rightTicks.push(rightCumulative);
+          
+          const midPoint = rightCumulative + (groupPercent / 2);
+          const yPosition = gridTop + (gridHeight * (100 - midPoint) / 100);
+          
+          rightAxisLabels.push({
+            type: 'text',
+            right: gridRight - 20,
+            top: yPosition,
+            z: 1000,
+            style: {
+              text: `${groupPercent.toFixed(1)}%`,
+              fontSize: 11,
+              fontWeight: 'bold',
+              fill: colors[Object.keys(ageBins).indexOf(group)],
+              textAlign: 'left',
+              textVerticalAlign: 'middle',
+              backgroundColor: 'white',
+              borderColor: '#404040',
+              borderWidth: 1,
+              padding: [6, 6],
+              borderRadius: 0
+            }
+          });
+          
+          rightCumulative += groupPercent;
+        }
+        rightTicks.push(rightCumulative); // Add final tick at 100%
+        
+        // Function to adjust label positions to prevent overlapping
+        function adjustLabelsForOverlap(labels, isLeft = true) {
+          const minSpacing = 20; // Minimum pixels between label centers
+          const labelHeight = 23; // Approximate height of label with padding
+          const maxOutsideOffset = 20; // Maximum pixels labels can move outside axis area
+          
+          // Sort labels by vertical position (top to bottom)
+          labels.sort((a, b) => a.top - b.top);
+          
+          // Adjust positions to prevent overlap
+          for (let i = 1; i < labels.length; i++) {
+            const currentLabel = labels[i];
+            const previousLabel = labels[i - 1];
+            
+            const minAllowedTop = previousLabel.top + minSpacing;
+            if (currentLabel.top < minAllowedTop) {
+              // Check if we need to move the label
+              const overlap = minAllowedTop - currentLabel.top;
+              
+              // First try to move within grid bounds
+              const maxTop = gridTop + gridHeight - (labelHeight / 2);
+              if (minAllowedTop <= maxTop) {
+                currentLabel.top = minAllowedTop;
+              } else {
+                // If we can't fit within grid, allow moving outside by up to 20px
+                const allowedTop = Math.min(minAllowedTop, maxTop + maxOutsideOffset);
+                currentLabel.top = allowedTop;
+                
+                // Also move the label further outside horizontally to indicate it's displaced
+                if (isLeft) {
+                  currentLabel.left = gridLeft - 25 - Math.min(overlap * 0.3, maxOutsideOffset);
+                } else {
+                  currentLabel.right = gridRight - 20 - Math.min(overlap * 0.3, maxOutsideOffset);
+                }
+                
+                // Add visual indicator for displaced labels
+                currentLabel.displaced = true;
+                currentLabel.style.backgroundColor = '#fff8dc'; // Slight yellow tint
+                currentLabel.style.borderColor = '#ffa500'; // Orange border
+                currentLabel.style.borderWidth = 2;
+              }
+            }
+          }
+          
+          return labels;
+        }
+        
+        // Adjust label positions for both axes
+        const adjustedLeftLabels = adjustLabelsForOverlap([...leftAxisLabels], true);
+        const adjustedRightLabels = adjustLabelsForOverlap([...rightAxisLabels], false);
+        
+        // Add connector lines for displaced labels
+        const connectorLines = [];
+        
+        adjustedLeftLabels.forEach((label, index) => {
+          if (label.displaced) {
+            const originalLabel = leftAxisLabels[index];
+            connectorLines.push({
+              type: 'line',
+              z: 999,
+              shape: {
+                x1: gridLeft - 20,
+                y1: label.top,
+                x2: gridLeft - 5,
+                y2: originalLabel.top
+              },
+              style: {
+                stroke: label.style.fill,
+                lineWidth: 1,
+                opacity: 0.7,
+                lineDash: [3, 3]
+              }
+            });
+          }
+        });
+        
+        adjustedRightLabels.forEach((label, index) => {
+          if (label.displaced) {
+            const originalLabel = rightAxisLabels[index];
+            const chartContainer = document.getElementById('main');
+            connectorLines.push({
+              type: 'line',
+              z: 999,
+              shape: {
+                x1: chartContainer.offsetWidth - gridRight + 20,
+                y1: label.top,
+                x2: chartContainer.offsetWidth - gridRight + 5,
+                y2: originalLabel.top
+              },
+              style: {
+                stroke: label.style.fill,
+                lineWidth: 1,
+                opacity: 0.7,
+                lineDash: [3, 3]
+              }
+            });
+          }
+        });
+        
+        // Add custom year labels for the dataZoom range
+        const chartContainer = document.getElementById('main');
+        const chartWidth = chartContainer.offsetWidth;
+        const dataZoomLeft = gridLeft;
+        const dataZoomRight = chartWidth - gridRight;
+        const dataZoomWidth = dataZoomRight - dataZoomLeft;
+        const dataZoomSliderTop = chartHeight - 15; // Position of the actual thin slider (adjusted for height: 3)
+        const labelTop = dataZoomSliderTop - 20; // Position labels above the slider handles
+        
+        // Calculate positions based on current zoom range - fixed at ends of slider track
+        const startYear = years[startIndex];
+        const endYear = years[endIndex];
+        // Fix year labels at the ends of the slider track, not following the handles
+        const startLabelX = dataZoomLeft; // Fixed at left end of track
+        const endLabelX = dataZoomRight; // Fixed at right end of track
+        
+        const yearLabels = [
+          {
+            type: 'text',
+            left: startLabelX - 50, // Offset slightly for better visibility
+            top: labelTop + 13,
+            z: 2000,
+            style: {
+              text: startYear.toString(),
+              fontSize: 11,
+              fontWeight: 'bold',
+              fill: '#535353',
+              textAlign: 'center',
+              textVerticalAlign: 'middle',
+              backgroundColor: 'rgba(250, 250, 250, 0.95)',
+              borderColor: '#ccc',
+              borderWidth: 1,
+              padding: [3, 6],
+              borderRadius: 2
+            }
+          },
+          {
+            type: 'text',
+            left: endLabelX + 15,
+            top: labelTop + 13,
+            z: 2000,
+            style: {
+              text: endYear.toString(),
+              fontSize: 11,
+              fontWeight: 'bold',
+              fill: '#535353',
+              textAlign: 'center',
+              textVerticalAlign: 'middle',
+              backgroundColor: 'rgba(250, 250, 250, 0.95)',
+              borderColor: '#ccc',
+              borderWidth: 1,
+              padding: [3, 6],
+              borderRadius: 2
+            }
+          }
+        ];
+        
+        // Update chart with new axis configuration and labels
+        const updateOption = {
+          yAxis: [{
+            type: 'value',
+            axisLine: {
+              show: true,
+              lineStyle: {
+                color: '#404040',
+                width: 2
+              }
+            },
+            axisLabel: {
+              show: false
+            },
+            axisTick: {
+              show: false // We'll add custom tick marks
+            },
+            splitLine: {
+              show: false // We'll add custom split lines
+            },
+            min: 0,
+            max: 100
+          }, {
+            type: 'value',
+            axisLine: {
+              show: true,
+              lineStyle: {
+                color: '#404040',
+                width: 2
+              }
+            },
+            axisLabel: {
+              show: false
+            },
+            axisTick: {
+              show: false // We'll add custom tick marks
+            },
+            splitLine: {
+              show: false
+            },
+            min: 0,
+            max: 100
+          }],
+          graphic: [...adjustedLeftLabels, ...adjustedRightLabels, ...connectorLines, ...yearLabels, ...createCustomTicks(leftTicks, rightTicks), ...createChartBorder()]
+        };
+        
+        chart.setOption(updateOption, false);
+      }
+
+      // Function to create chart border as graphic elements
+      function createChartBorder() {
+        const chartContainer = document.getElementById('main');
+        const chartWidth = chartContainer.offsetWidth;
+        const gridLeft = chartConfig.gridLeft;
+        const gridRight = chartConfig.gridRight;
+        const gridTop = chartConfig.gridTop;
+        const gridBottom = chartConfig.gridBottom;
+        const chartHeight = chartConfig.chartHeight;
+        
+        return [
+          // Top border
+          {
+            type: 'line',
+            z: 50,
+            shape: {
+              x1: gridLeft,
+              y1: gridTop,
+              x2: chartWidth - gridRight,
+              y2: gridTop
+            },
+            style: {
+              stroke: '#404040',
+              lineWidth: 5
+            }
+          },
+          // Bottom border
+          {
+            type: 'line',
+            z: 50,
+            shape: {
+              x1: gridLeft,
+              y1: chartHeight - gridBottom,
+              x2: chartWidth - gridRight,
+              y2: chartHeight - gridBottom
+            },
+            style: {
+              stroke: '#404040',
+              lineWidth: 5
+            }
+          },
+          // Left border
+          {
+            type: 'line',
+            z: 50,
+            shape: {
+              x1: gridLeft,
+              y1: gridTop,
+              x2: gridLeft,
+              y2: chartHeight - gridBottom
+            },
+            style: {
+              stroke: '#404040',
+              lineWidth: 5
+            }
+          },
+          // Right border
+          {
+            type: 'line',
+            z: 50,
+            shape: {
+              x1: chartWidth - gridRight,
+              y1: gridTop,
+              x2: chartWidth - gridRight,
+              y2: chartHeight - gridBottom
+            },
+            style: {
+              stroke: '#404040',
+              lineWidth: 5
+            }
+          }
+        ];
+      }
+
+      // Function to create custom tick marks and split lines
+      function createCustomTicks(leftTicks, rightTicks) {
+        const tickElements = [];
+        const gridLeft = chartConfig.gridLeft;
+        const gridRight = chartConfig.gridRight;
+        const gridTop = chartConfig.gridTop;
+        const gridBottom = chartConfig.gridBottom;
+        const chartHeight = chartConfig.chartHeight;
+        const chartContainer = document.getElementById('main');
+        const chartWidth = chartContainer.offsetWidth;
+        const gridHeight = chartHeight - gridTop - gridBottom;
+        
+        // Add left axis tick marks
+        leftTicks.forEach(tickValue => {
+          const yPosition = gridTop + (gridHeight * (100 - tickValue) / 100);
+          
+          // Tick mark on left axis
+          tickElements.push({
+            type: 'line',
+            shape: {
+              x1: gridLeft - 5,
+              y1: yPosition,
+              x2: gridLeft,
+              y2: yPosition
+            },
+            style: {
+              stroke: '#404040',
+              lineWidth: 2
+            }
+          });
+          
+          // Split line across chart (except at 0 and 100)
+          if (tickValue > 0 && tickValue < 100) {
+            tickElements.push({
+              type: 'line',
+              shape: {
+                x1: gridLeft,
+                y1: yPosition,
+                x2: chartWidth - gridRight,
+                y2: yPosition
+              },
+              style: {
+                stroke: '#404040',
+                lineWidth: 1,
+                lineDash: [5, 5],
+                opacity: 0.3
+              }
+            });
+          }
+        });
+        
+        // Add right axis tick marks
+        rightTicks.forEach(tickValue => {
+          const yPosition = gridTop + (gridHeight * (100 - tickValue) / 100);
+          
+          // Tick mark on right axis
+          tickElements.push({
+            type: 'line',
+            shape: {
+              x1: chartWidth - gridRight,
+              y1: yPosition,
+              x2: chartWidth - gridRight + 5,
+              y2: yPosition
+            },
+            style: {
+              stroke: '#404040',
+              lineWidth: 2
+            }
+          });
+        });
+        
+        return tickElements;
+      }
+
+      // Initial labels setup
+      updateYAxisLabels(0, 100);
+
+      // Listen for dataZoom events to update labels dynamically
+      chart.on('dataZoom', function(params) {
+        // Handle both single dataZoom and batch events
+        let startPercent, endPercent;
+        
+        if (params.batch && params.batch[0]) {
+          // Batch event (when using slider)
+          startPercent = params.batch[0].start;
+          endPercent = params.batch[0].end;
+        } else if (params.start !== undefined && params.end !== undefined) {
+          // Direct event
+          startPercent = params.start;
+          endPercent = params.end;
+        } else {
+          // Fallback - get current zoom state from chart option
+          const currentOption = chart.getOption();
+          if (currentOption.dataZoom && currentOption.dataZoom[0]) {
+            startPercent = currentOption.dataZoom[0].start || 0;
+            endPercent = currentOption.dataZoom[0].end || 100;
+          } else {
+            startPercent = 0;
+            endPercent = 100;
+          }
+        }
+        
+        console.log('DataZoom event:', { startPercent, endPercent }); // Debug log
+        updateYAxisLabels(startPercent, endPercent);
+      });
+
+      // Also listen for brush events and other zoom interactions
+      chart.on('brush', function(params) {
+        const currentOption = chart.getOption();
+        if (currentOption.dataZoom && currentOption.dataZoom[0]) {
+          const startPercent = currentOption.dataZoom[0].start || 0;
+          const endPercent = currentOption.dataZoom[0].end || 100;
+          updateYAxisLabels(startPercent, endPercent);
+        }
+      });
+
+      // Periodic check for zoom changes as backup
+      let lastStart = 0, lastEnd = 100;
+      setInterval(() => {
+        const currentOption = chart.getOption();
+        if (currentOption.dataZoom && currentOption.dataZoom[0]) {
+          const currentStart = currentOption.dataZoom[0].start || 0;
+          const currentEnd = currentOption.dataZoom[0].end || 100;
+          
+          if (Math.abs(currentStart - lastStart) > 0.1 || Math.abs(currentEnd - lastEnd) > 0.1) {
+            console.log('Zoom change detected:', { currentStart, currentEnd }); // Debug log
+            updateYAxisLabels(currentStart, currentEnd);
+            lastStart = currentStart;
+            lastEnd = currentEnd;
+          }
+        }
+      }, 200); // Check every 200ms
+
+      // Add a border on initial load
+      setTimeout(() => {
+        // Remove any existing DOM border div
+        const chartContainer = document.getElementById('main');
+        const existingBorder = chartContainer.querySelector('.chart-border');
+        if (existingBorder) {
+          existingBorder.remove();
+        }
+      }, 500);
+
+      // Make chart responsive
+      window.addEventListener('resize', function() {
+        chart.resize();
+        
+        // Update labels and border on resize
+        setTimeout(() => {
+          const currentOption = chart.getOption();
+          if (currentOption.dataZoom && currentOption.dataZoom[0]) {
+            const startPercent = currentOption.dataZoom[0].start || 0;
+            const endPercent = currentOption.dataZoom[0].end || 100;
+            updateYAxisLabels(startPercent, endPercent);
+          }
+        }, 100);
+      });
+
+      console.log(`Loaded ${data.length} records from ${years[0]} to ${years[years.length-1]}`);
+    }
+
+    // Load CSV file directly on page load
+    Papa.parse('sg_pop_single_age_thousands.csv', {
+      download: true,
+      header: true,
+      dynamicTyping: true,
+      complete: processData,
+      error: function(error) {
+        console.error('Error loading CSV:', error);
+        document.querySelector('.info').innerHTML = '<strong>Error:</strong> Could not load sg_pop_single_age_thousands.csv. Make sure the file is in the same directory as this HTML file.';
+      }
+    });
+  </script>
+</body>
+</html>
